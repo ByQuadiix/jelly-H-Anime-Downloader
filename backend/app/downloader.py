@@ -1,23 +1,27 @@
-"""Download-Queue auf Basis von yt-dlp."""
+"""Download-Queue auf Basis von yt-dlp (Einstellungen und Quellen zur Laufzeit aenderbar)."""
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
 from . import naming
-from .config import Settings
+from .config import QUALITIES, Settings
 from .jobs import Job, JobStore
+from .settings_store import SettingsStore, Source
 
 log = logging.getLogger("downloader")
 
-QUALITIES = {"best": None, "1080": 1080, "720": 720, "480": 480}
+POOL_SIZE = 8  # Obergrenze; die tatsaechliche Parallelitaet steuert die Admin-Einstellung (1-8)
 
 
 def format_selector(quality: str) -> str:
@@ -27,14 +31,75 @@ def format_selector(quality: str) -> str:
     return f"bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b"
 
 
+@contextmanager
+def source_options(source: Source | None, tmp_dir: Path) -> Iterator[dict]:
+    """yt-dlp-Optionen einer Quelle (Cookies, Header, Zugangsdaten, Proxy). Raeumt Cookie-Datei auf."""
+    opts: dict = {}
+    cookie_path: str | None = None
+    try:
+        if source:
+            if source.headers:
+                opts["http_headers"] = dict(source.headers)
+            if source.username:
+                opts["username"] = source.username
+                opts["password"] = source.password
+            if source.proxy:
+                opts["proxy"] = source.proxy
+            if source.cookies.strip():
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                fd, cookie_path = tempfile.mkstemp(prefix="cookies-", suffix=".txt", dir=tmp_dir)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:  # mkstemp legt die Datei mit 0600 an
+                    handle.write(source.cookies)
+                opts["cookiefile"] = cookie_path
+        yield opts
+    finally:
+        if cookie_path:
+            try:
+                os.unlink(cookie_path)
+            except OSError:
+                pass
+
+
+class _Limiter:
+    """Dynamisches Semaphor: das Limit kann sich waehrend der Laufzeit aendern."""
+
+    def __init__(self, get_limit: Callable[[], int]):
+        self._get_limit = get_limit
+        self._cond = threading.Condition()
+        self._active = 0
+
+    def acquire(self, cancelled: Callable[[], bool]) -> bool:
+        with self._cond:
+            while self._active >= self._get_limit():
+                if cancelled():
+                    return False
+                self._cond.wait(1.0)
+            if cancelled():
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._cond:
+            self._active -= 1
+            self._cond.notify_all()
+
+
 class DownloadManager:
-    def __init__(self, settings: Settings, store: JobStore, on_finished: Callable[[Job], None] | None = None):
+    def __init__(self, settings: Settings, store: JobStore, runtime: SettingsStore,
+                 on_finished: Callable[[Job], None] | None = None):
         self.settings = settings
         self.store = store
+        self.runtime = runtime
         self._on_finished = on_finished
-        self._pool = ThreadPoolExecutor(max_workers=settings.max_concurrent, thread_name_prefix="dl")
+        self._pool = ThreadPoolExecutor(max_workers=POOL_SIZE, thread_name_prefix="dl")
+        self._limiter = _Limiter(lambda: self.runtime.get().max_concurrent)
         self._tmp_dir = settings.data_dir / "tmp"
         self._tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def tmp_dir(self) -> Path:
+        return self._tmp_dir
 
     # -- Queue --------------------------------------------------------------
     def resume_pending(self) -> None:
@@ -66,8 +131,52 @@ class DownloadManager:
         return None
 
     def _run(self, job: Job) -> None:
-        if self.store.is_cancelled(job.id):
+        cancelled = lambda: self.store.is_cancelled(job.id)  # noqa: E731
+        if cancelled() or not self._limiter.acquire(cancelled):
             return
+        try:
+            self._download(job)
+        finally:
+            self._limiter.release()
+        if job.status == "done" and self._on_finished:
+            try:
+                self._on_finished(job)
+            except Exception:  # noqa: BLE001
+                log.exception("on_finished fehlgeschlagen")
+
+    def _build_opts(self, job: Job, folder: Path, template: str, hook) -> dict:
+        rt = self.runtime.get()
+        opts = {
+            "format": format_selector(job.quality),
+            "outtmpl": {"default": template},
+            "paths": {"home": str(folder), "temp": str(self._tmp_dir)},
+            "merge_output_format": rt.output_format,
+            "progress_hooks": [hook],
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "noplaylist": True,
+            "retries": 10,
+            "fragment_retries": 10,
+            "concurrent_fragment_downloads": 4,
+            "socket_timeout": 30,
+            "overwrites": False,
+            "windowsfilenames": True,
+        }
+        if rt.rate_limit:
+            limit = yt_dlp.utils.parse_bytes(rt.rate_limit)
+            if limit:
+                opts["ratelimit"] = int(limit)
+        if rt.subtitle_langs:
+            opts["writesubtitles"] = True
+            opts["subtitleslangs"] = list(rt.subtitle_langs)
+            if rt.embed_subs:
+                opts["postprocessors"] = [{"key": "FFmpegEmbedSubtitle", "already_have_subtitle": False}]
+            else:  # Sidecar-Dateien (.en.srt) erkennt Jellyfin automatisch
+                opts["postprocessors"] = [{"key": "FFmpegSubtitlesConvertor", "format": "srt"}]
+        return opts
+
+    def _download(self, job: Job) -> None:
         folder, template = self._target(job)
         existing = self._existing_file(folder, template)
         if existing:
@@ -101,33 +210,16 @@ class DownloadManager:
             elif status == "finished":
                 self.store.update(job, status="processing", progress=99.9, speed="", eta="")
 
-        opts = {
-            "format": format_selector(job.quality),
-            "outtmpl": {"default": template},
-            "paths": {"home": str(folder), "temp": str(self._tmp_dir)},
-            "merge_output_format": self.settings.output_format,
-            "progress_hooks": [hook],
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "noplaylist": True,
-            "retries": 10,
-            "fragment_retries": 10,
-            "concurrent_fragment_downloads": 4,
-            "socket_timeout": 30,
-            "overwrites": False,
-            "windowsfilenames": True,
-        }
-        if self.settings.rate_limit:
-            opts["ratelimit"] = _parse_rate(self.settings.rate_limit)
-
         try:
             folder.mkdir(parents=True, exist_ok=True)
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(job.url, download=True)
-                final = Path(ydl.prepare_filename(info)) if info else None
-                if info and info.get("requested_downloads"):
-                    final = Path(info["requested_downloads"][0].get("filepath") or final)
+            opts = self._build_opts(job, folder, template, hook)
+            with source_options(self.runtime.match(job.url), self._tmp_dir) as extra:
+                opts.update(extra)
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(job.url, download=True)
+                    final = Path(ydl.prepare_filename(info)) if info else None
+                    if info and info.get("requested_downloads"):
+                        final = Path(info["requested_downloads"][0].get("filepath") or final)
             self.store.update(job, status="done", progress=100.0, speed="", eta="",
                               filename=final.name if final else template, finished=time.time())
         except DownloadCancelled:
@@ -141,16 +233,6 @@ class DownloadManager:
                 self.store.update(job, status="error", error=msg, speed="", eta="", finished=time.time())
         finally:
             self.store.save()
-        if job.status == "done" and self._on_finished:
-            try:
-                self._on_finished(job)
-            except Exception:  # noqa: BLE001
-                log.exception("on_finished fehlgeschlagen")
-
-
-def _parse_rate(text: str) -> int | None:
-    value = yt_dlp.utils.parse_bytes(text)
-    return int(value) if value else None
 
 
 class LibraryRefresher:

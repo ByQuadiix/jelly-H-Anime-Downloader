@@ -18,7 +18,7 @@ Das Backend ist **nicht** direkt aus dem Browser erreichbar. Nur eingeloggte Jel
 
 ## Voraussetzungen
 
-- Jellyfin **10.11.x** oder **12.x** mit installiertem [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)-Plugin
+- Jellyfin **12.4** (Standard-Build) oder 10.11.x mit installiertem [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)-Plugin
 - Docker (für das Backend)
 - Die Zielbibliothek muss für den Backend-Container beschreibbar sein
 
@@ -47,18 +47,20 @@ docker compose up -d --build
 ZIP aus den CI-Artefakten (GitHub → Actions) oder selbst bauen:
 
 ```bash
-./plugin/build.sh 10.11    # für Jellyfin 10.11.x  → dist/HAnimeDownloader_10.11.zip
-./plugin/build.sh 12       # für Jellyfin 12.x     → dist/HAnimeDownloader_12.zip
+./plugin/build.sh 12       # für Jellyfin 12.4    → dist/HAnimeDownloader_12.zip   (Standard)
+./plugin/build.sh 10.11    # für Jellyfin 10.11.x → dist/HAnimeDownloader_10.11.zip
 ```
 
-ZIP entpacken nach `<jellyfin-config>/plugins/HAnimeDownloader_1.0.0.0/` und Jellyfin **neu starten**.
+ZIP entpacken nach `<jellyfin-config>/plugins/HAnimeDownloader_1.1.0.0/` und Jellyfin **neu starten**.
 
-### 3. Plugin konfigurieren
+### 3. Verbindung einrichten
 
-Jellyfin → Dashboard → Plugins → **H!Anime Downloader**:
+Jellyfin → Dashboard → Plugins → **H!Anime Downloader** (nur für Administratoren sichtbar):
 
 - **Backend-URL**: `http://hanime-downloader:8080` (so, wie der *Jellyfin-Server* das Backend erreicht)
 - **API-Key**: derselbe Wert wie `API_KEY` in `.env`
+
+Nach dem Speichern erscheinen auf derselben Seite die Einstellungen des Backends (siehe unten).
 
 Danach die Jellyfin-Seite neu laden (Strg+F5). In der Seitenleiste erscheint **H!Anime Downloader**, zusätzlich ein Download-Symbol in der Kopfzeile.
 
@@ -76,7 +78,28 @@ Ablage im Jellyfin-Schema:
 
 Bereits vorhandene Folgen werden übersprungen. Mit `JELLYFIN_URL` + `JELLYFIN_API_KEY` stößt das Backend nach fertigen Downloads automatisch einen Bibliotheksscan an.
 
+## Admin-Einstellungen und Quellen
+
+Dieselbe Plugin-Seite (Dashboard → Plugins → H!Anime Downloader) ist die **Einstellungsseite für Admins**. Sie ist über Jellyfins Administratoren-Berechtigung geschützt; normale Benutzer erreichen weder die Seite noch die zugehörige API (`/HAnimeDownloader/admin/…`).
+
+**Allgemein** (wirken sofort, ohne Neustart): parallele Downloads (1–8), Ausgabeformat, Standard-Qualität, Bandbreitenlimit, Untertitel-Sprachen (als `.srt` neben der Datei oder eingebettet) und die Option „nur URLs aktivierter Quellen erlauben“.
+
+**Quellen**: Pro Quelle legst du fest, für welche Domains sie gilt und mit welchen Zugangsdaten heruntergeladen wird:
+
+| Feld | Zweck |
+|---|---|
+| Name, Aktiv | Anzeige in der UI, Quelle ein-/ausschalten |
+| Domains | z. B. `beispiel.org` – Unterdomains gelten automatisch |
+| Benutzername / Passwort | Login für Seiten mit yt-dlp-Login-Unterstützung |
+| Cookies | `cookies.txt` im Netscape-Format, z. B. aus deinem eingeloggten Browser (für Konten mit eigenem Abo) |
+| Zusätzliche Header | z. B. `Referer: …` |
+| Proxy | `http://`, `socks5://` … |
+
+Passwörter und Cookies werden nie wieder an den Browser ausgeliefert (die Seite zeigt nur „gespeichert“) und liegen im Backend in `/data/settings.json` mit Dateirechten `600`. Leeres Feld beim Speichern = unverändert; zum Löschen gibt es eine eigene Checkbox.
+
 ## Konfiguration (Umgebungsvariablen des Backends)
+
+Die folgenden Werte sind nur die **Startwerte**; was du auf der Admin-Seite speicherst, hat danach Vorrang.
 
 | Variable | Standard | Bedeutung |
 |---|---|---|
@@ -91,7 +114,7 @@ Bereits vorhandene Folgen werden übersprungen. Mit `JELLYFIN_URL` + `JELLYFIN_A
 
 ## Unterstützte Quellen
 
-Als Download-Engine dient **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**. Unterstützt ist, was yt-dlp kann (viele Seiten, direkte `.mp4`/`.m3u8`-Links, Seiten mit eingebettetem Player). Für Seiten ohne yt-dlp-Extractor lässt sich ein [yt-dlp-Plugin](https://github.com/yt-dlp/yt-dlp#plugins) in `/data` ablegen. Bitte lade nur Inhalte herunter, zu denen du die Rechte hast bzw. deren Nutzungsbedingungen das erlauben.
+Als Download-Engine dient **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**. Unterstützt ist, was yt-dlp kann (viele Seiten, direkte `.mp4`/`.m3u8`-Links, Seiten mit eingebettetem Player). Es werden **keine seitenspezifischen Scraper** mitgeliefert, und **DRM-geschützte Streams** (z. B. kostenpflichtige Streamingdienste wie HiDive) werden nicht unterstützt. Für Seiten ohne yt-dlp-Extractor kannst du selbst ein [yt-dlp-Plugin](https://github.com/yt-dlp/yt-dlp#plugins) in `/data` ablegen. Bitte lade nur Inhalte herunter, zu denen du die Rechte hast bzw. deren Nutzungsbedingungen das erlauben.
 
 ## Fehlersuche
 
@@ -106,7 +129,7 @@ Als Download-Engine dient **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**. Unters
 ```bash
 cd backend && pip install -r requirements-dev.txt && python -m pytest -q
 node --check web/client.js
-./plugin/build.sh 10.11
+./plugin/build.sh
 ```
 
 Die UI-Datei `web/client.js` wird beim Plugin-Build als Ressource eingebettet.
@@ -114,5 +137,6 @@ Die UI-Datei `web/client.js` wird beim Plugin-Build als Ressource eingebettet.
 ## Sicherheitshinweise
 
 - API-Key geheim halten und das Backend nicht per Port-Freigabe ins Internet stellen.
-- Jeder Jellyfin-Benutzer kann Downloads starten und die gemeinsame Warteschlange sehen (gewünscht: „jeder per WebUI“). Eine Beschränkung auf Administratoren ist aktuell nicht eingebaut.
+- Jeder Jellyfin-Benutzer kann Downloads starten und die gemeinsame Warteschlange sehen (gewünscht: „jeder per WebUI“). Einstellungen und Quellen darf nur ein Jellyfin-Administrator ändern.
+- Cookies/Passwörter der Quellen liegen im Klartext in `/data/settings.json` (Rechte `600`). Das `/data`-Volume nicht teilen und mitsichern, wie ein Passwort-Tresor.
 - URLs auf private/interne Adressen werden standardmäßig abgelehnt (SSRF-Schutz).

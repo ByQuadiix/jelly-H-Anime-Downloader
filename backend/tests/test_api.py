@@ -60,7 +60,7 @@ def test_rejects_non_http_urls(client):
 
 
 def test_resolve_maps_errors(client, monkeypatch):
-    def boom(_url):
+    def boom(_url, _extra=None):
         raise resolver.ResolveError("nicht unterstuetzt")
 
     monkeypatch.setattr(resolver, "resolve", boom)

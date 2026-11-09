@@ -31,7 +31,7 @@ def _entry_url(entry: dict[str, Any]) -> str | None:
     return entry.get("webpage_url") or entry.get("url")
 
 
-def resolve(url: str) -> ResolvedSource:
+def resolve(url: str, extra_opts: dict[str, Any] | None = None) -> ResolvedSource:
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -39,6 +39,7 @@ def resolve(url: str) -> ResolvedSource:
         "extract_flat": "in_playlist",
         "noplaylist": False,
         "socket_timeout": 30,
+        **(extra_opts or {}),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:

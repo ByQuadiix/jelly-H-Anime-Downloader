@@ -1,16 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Jellyfin 10.11.x: net9.0 + 10.11.x | Jellyfin 12.x: net10.0 + 12.x
-         Beispiel: dotnet build -c Release -p:JellyfinTfm=net10.0 -p:JellyfinVersion=12.4.0 -->
-    <JellyfinTfm Condition="'$(JellyfinTfm)' == ''">net9.0</JellyfinTfm>
+    <!-- Standard: Jellyfin 12.4 (net10.0). Fuer 10.11.x: -p:JellyfinTfm=net9.0 -p:JellyfinVersion=10.11.0 -->
+    <JellyfinTfm Condition="'$(JellyfinTfm)' == ''">net10.0</JellyfinTfm>
     <TargetFramework>$(JellyfinTfm)</TargetFramework>
-    <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">10.11.0</JellyfinVersion>
+    <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">12.4.0</JellyfinVersion>
     <RootNamespace>Jellyfin.Plugin.HAnimeDownloader</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.HAnimeDownloader</AssemblyName>
-    <Version>1.0.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.1.0.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

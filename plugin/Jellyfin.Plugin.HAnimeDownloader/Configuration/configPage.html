@@ -5,26 +5,68 @@
     <title>H!Anime Downloader</title>
 </head>
 <body>
-<div id="HAnimeDownloaderConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+<div id="HAnimeDownloaderConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
+    <style>
+        #HAnimeDownloaderConfigPage .hdl-section { margin: 0 0 2em; }
+        #HAnimeDownloaderConfigPage .hdl-field { margin: 0 0 1em; display: block; }
+        #HAnimeDownloaderConfigPage .hdl-field > span { display: block; margin-bottom: .3em; font-size: .95em; }
+        #HAnimeDownloaderConfigPage .hdl-field small { display: block; opacity: .7; margin-top: .25em; }
+        #HAnimeDownloaderConfigPage input[type=text], #HAnimeDownloaderConfigPage input[type=url],
+        #HAnimeDownloaderConfigPage input[type=password], #HAnimeDownloaderConfigPage input[type=number],
+        #HAnimeDownloaderConfigPage select, #HAnimeDownloaderConfigPage textarea {
+            width: 100%; box-sizing: border-box; padding: .6em .8em; font: inherit; color: inherit;
+            background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+        }
+        #HAnimeDownloaderConfigPage textarea { min-height: 5em; font-family: monospace; font-size: .85em; }
+        #HAnimeDownloaderConfigPage .hdl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 1.2em; }
+        #HAnimeDownloaderConfigPage .hdl-source { border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 1em; margin: 0 0 1em; }
+        #HAnimeDownloaderConfigPage .hdl-source-head { display: flex; gap: 1em; align-items: center; justify-content: space-between; margin-bottom: .8em; }
+        #HAnimeDownloaderConfigPage .hdl-check { display: flex; gap: .5em; align-items: center; cursor: pointer; }
+        #HAnimeDownloaderConfigPage .hdl-msg { margin: 1em 0; min-height: 1.4em; }
+        #HAnimeDownloaderConfigPage .hdl-err { color: #ff6b6b; }
+        #HAnimeDownloaderConfigPage .hdl-ok { color: #6bd66b; }
+        #HAnimeDownloaderConfigPage .hdl-note { opacity: .75; font-size: .9em; margin: .3em 0 1em; }
+    </style>
     <div data-role="content">
         <div class="content-primary">
-            <form id="HAnimeDownloaderConfigForm">
+            <form id="hdlForm" autocomplete="off">
                 <h2>H!Anime Downloader</h2>
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="BackendUrl">Backend-URL</label>
-                    <input id="BackendUrl" name="BackendUrl" type="url" is="emby-input" placeholder="http://hanime-downloader:8080" />
-                    <div class="fieldDescription">Adresse des Downloader-Containers, so wie der Jellyfin-Server sie erreicht (nicht der Browser).</div>
+
+                <div class="hdl-section">
+                    <h3>Verbindung zum Backend</h3>
+                    <div class="hdl-grid">
+                        <label class="hdl-field"><span>Backend-URL</span>
+                            <input id="hdlBackendUrl" type="url" placeholder="http://hanime-downloader:8080" />
+                            <small>So, wie der Jellyfin-Server das Backend erreicht.</small></label>
+                        <label class="hdl-field"><span>API-Key</span>
+                            <input id="hdlApiKey" type="password" autocomplete="new-password" />
+                            <small>Muss dem <code>API_KEY</code> des Backends entsprechen.</small></label>
+                    </div>
                 </div>
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="ApiKey">API-Key</label>
-                    <input id="ApiKey" name="ApiKey" type="password" is="emby-input" autocomplete="new-password" />
-                    <div class="fieldDescription">Muss exakt dem <code>API_KEY</code> des Backends entsprechen.</div>
+
+                <div id="hdlBackendSettings" class="hdl-section">
+                    <h3>Allgemein</h3>
+                    <div class="hdl-grid">
+                        <label class="hdl-field"><span>Parallele Downloads (1-8)</span><input id="hdlMaxConcurrent" type="number" min="1" max="8" /></label>
+                        <label class="hdl-field"><span>Ausgabeformat</span>
+                            <select id="hdlOutputFormat"><option value="mkv">mkv</option><option value="mp4">mp4</option></select></label>
+                        <label class="hdl-field"><span>Standard-Qualit&auml;t</span>
+                            <select id="hdlDefaultQuality"><option value="best">Beste</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label>
+                        <label class="hdl-field"><span>Bandbreitenlimit pro Download</span><input id="hdlRateLimit" type="text" placeholder="z. B. 5M (leer = unbegrenzt)" /></label>
+                        <label class="hdl-field"><span>Untertitel-Sprachen</span><input id="hdlSubLangs" type="text" placeholder="en, de" />
+                            <small>Sprachcodes, kommagetrennt. Leer = keine Untertitel laden.</small></label>
+                    </div>
+                    <label class="hdl-check hdl-field"><input id="hdlEmbedSubs" type="checkbox" /> <span>Untertitel in die Videodatei einbetten (sonst als .srt neben die Datei)</span></label>
+                    <label class="hdl-check hdl-field"><input id="hdlRestrict" type="checkbox" /> <span>Nur URLs der unten aktivierten Quellen erlauben</span></label>
+
+                    <h3>Quellen</h3>
+                    <p class="hdl-note">Eine Quelle ordnet Domains eigene Zugangsdaten zu (Cookies, Login, Header, Proxy). Heruntergeladen wird mit yt-dlp &ndash; es funktionieren nur Seiten, die yt-dlp unterst&uuml;tzt. DRM-gesch&uuml;tzte Streams werden nicht unterst&uuml;tzt. Nutze nur Konten und Inhalte, zu denen du berechtigt bist.</p>
+                    <div id="hdlSources"></div>
+                    <button id="hdlAddSource" is="emby-button" type="button" class="raised emby-button"><span>Quelle hinzuf&uuml;gen</span></button>
                 </div>
-                <div>
-                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                        <span>Speichern</span>
-                    </button>
-                </div>
+
+                <div id="hdlMsg" class="hdl-msg" role="status"></div>
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Speichern</span></button>
             </form>
         </div>
     </div>
@@ -32,24 +74,133 @@
         (function () {
             var pluginId = 'e286ec7b-b08d-40dc-ac58-3788907d65f7';
             var page = document.querySelector('#HAnimeDownloaderConfigPage');
+            var $ = function (id) { return page.querySelector('#' + id); };
+            var sources = []; // { id, hasPassword, hasCookies, node }
+            var backendReady = false;
+
+            function msg(text, cls) { var m = $('hdlMsg'); m.textContent = text || ''; m.className = 'hdl-msg ' + (cls || ''); }
+
+            function el(tag, props, kids) {
+                var n = document.createElement(tag);
+                Object.keys(props || {}).forEach(function (k) {
+                    if (k === 'text') n.textContent = props[k]; else if (k === 'class') n.className = props[k]; else n.setAttribute(k, props[k]);
+                });
+                (kids || []).forEach(function (c) { n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+                return n;
+            }
+            function field(label, input, hint) {
+                return el('label', { class: 'hdl-field' }, [el('span', { text: label }), input, hint ? el('small', { text: hint }) : null].filter(Boolean));
+            }
+
+            function addSource(src) {
+                src = src || { name: '', enabled: true, domains: [], headers: '', username: '', proxy: '' };
+                var s = { id: src.id || '', hasPassword: !!src.hasPassword, hasCookies: !!src.hasCookies };
+                var enabled = el('input', { type: 'checkbox' }); enabled.checked = src.enabled !== false;
+                var name = el('input', { type: 'text', placeholder: 'Name' }); name.value = src.name || '';
+                var domains = el('input', { type: 'text', placeholder: 'beispiel.org, cdn.beispiel.org' }); domains.value = (src.domains || []).join(', ');
+                var user = el('input', { type: 'text', autocomplete: 'off' }); user.value = src.username || '';
+                var pass = el('input', { type: 'password', autocomplete: 'new-password', placeholder: s.hasPassword ? 'gespeichert – leer lassen zum Behalten' : '' });
+                var clearPass = el('input', { type: 'checkbox' });
+                var cookies = el('textarea', { placeholder: s.hasCookies ? '# gespeichert – leer lassen zum Behalten' : '# Netscape-Format (cookies.txt), z. B. aus einem Browser-Export' });
+                var clearCookies = el('input', { type: 'checkbox' });
+                var headers = el('textarea', { placeholder: 'Referer: https://beispiel.org/' }); headers.value = src.headers || '';
+                var proxy = el('input', { type: 'text', placeholder: 'socks5://host:1080 (optional)' }); proxy.value = src.proxy || '';
+                var remove = el('button', { is: 'emby-button', type: 'button', class: 'raised emby-button' }, [el('span', { text: 'Entfernen' })]);
+
+                var card = el('div', { class: 'hdl-source' }, [
+                    el('div', { class: 'hdl-source-head' }, [
+                        el('label', { class: 'hdl-check' }, [enabled, el('span', { text: 'Aktiv' })]), remove]),
+                    el('div', { class: 'hdl-grid' }, [
+                        field('Name', name), field('Domains', domains, 'Kommagetrennt; Unterdomains gelten automatisch.'),
+                        field('Benutzername', user), field('Passwort', pass),
+                        field('Proxy', proxy)]),
+                    s.hasPassword ? el('label', { class: 'hdl-check hdl-field' }, [clearPass, el('span', { text: 'Gespeichertes Passwort löschen' })]) : null,
+                    field('Cookies', cookies),
+                    s.hasCookies ? el('label', { class: 'hdl-check hdl-field' }, [clearCookies, el('span', { text: 'Gespeicherte Cookies löschen' })]) : null,
+                    field('Zusätzliche Header', headers, 'Eine Zeile pro Header: Name: Wert')
+                ].filter(Boolean));
+
+                s.node = card;
+                s.read = function () {
+                    var out = { name: name.value.trim(), enabled: enabled.checked, domains: domains.value, username: user.value.trim(), headers: headers.value, proxy: proxy.value.trim() };
+                    if (s.id) out.id = s.id;
+                    if (clearPass.checked) out.password = ''; else if (pass.value) out.password = pass.value;
+                    if (clearCookies.checked) out.cookies = ''; else if (cookies.value.trim()) out.cookies = cookies.value;
+                    return out; // fehlende password/cookies = unveraendert
+                };
+                remove.addEventListener('click', function () {
+                    sources = sources.filter(function (x) { return x !== s; });
+                    card.remove();
+                });
+                sources.push(s);
+                $('hdlSources').appendChild(card);
+            }
+
+            function fillSettings(d) {
+                $('hdlMaxConcurrent').value = d.maxConcurrent;
+                $('hdlOutputFormat').value = d.outputFormat;
+                $('hdlDefaultQuality').value = d.defaultQuality;
+                $('hdlRateLimit').value = d.rateLimit || '';
+                $('hdlSubLangs').value = (d.subtitleLangs || []).join(', ');
+                $('hdlEmbedSubs').checked = !!d.embedSubs;
+                $('hdlRestrict').checked = !!d.restrictToSources;
+                sources = []; $('hdlSources').textContent = '';
+                (d.sources || []).forEach(addSource);
+            }
+
+            function call(method, path, body) {
+                var o = { type: method, url: ApiClient.getUrl('HAnimeDownloader/admin/' + path), dataType: 'json' };
+                if (body !== undefined) { o.data = JSON.stringify(body); o.contentType = 'application/json'; }
+                return ApiClient.ajax(o).catch(function (r) {
+                    if (r && typeof r.json === 'function') {
+                        return r.json().then(function (j) { throw new Error(j.detail || j.title || ('HTTP ' + r.status)); }, function () { throw new Error('HTTP ' + r.status); });
+                    }
+                    throw new Error('Backend nicht erreichbar');
+                });
+            }
+
+            function loadBackend() {
+                backendReady = false;
+                $('hdlBackendSettings').style.opacity = '.5';
+                return call('GET', 'settings').then(function (d) {
+                    fillSettings(d); backendReady = true; $('hdlBackendSettings').style.opacity = '1'; msg('');
+                }).catch(function (e) {
+                    msg('Backend-Einstellungen nicht ladbar: ' + e.message + ' – Verbindung oben speichern und erneut versuchen.', 'hdl-err');
+                });
+            }
 
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    page.querySelector('#BackendUrl').value = config.BackendUrl || '';
-                    page.querySelector('#ApiKey').value = config.ApiKey || '';
-                    Dashboard.hideLoadingMsg();
-                });
+                    $('hdlBackendUrl').value = config.BackendUrl || '';
+                    $('hdlApiKey').value = config.ApiKey || '';
+                    return loadBackend();
+                }).then(function () { Dashboard.hideLoadingMsg(); });
             });
 
-            page.querySelector('#HAnimeDownloaderConfigForm').addEventListener('submit', function (e) {
+            $('hdlAddSource').addEventListener('click', function () { if (backendReady) addSource(); });
+
+            $('hdlForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 Dashboard.showLoadingMsg();
+                var done = function () { Dashboard.hideLoadingMsg(); };
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.BackendUrl = page.querySelector('#BackendUrl').value.trim();
-                    config.ApiKey = page.querySelector('#ApiKey').value;
-                    ApiClient.updatePluginConfiguration(pluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
-                });
+                    config.BackendUrl = $('hdlBackendUrl').value.trim();
+                    config.ApiKey = $('hdlApiKey').value;
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function () {
+                    if (!backendReady) { return loadBackend().then(function () { if (backendReady) msg('Verbindung gespeichert.', 'hdl-ok'); }); }
+                    return call('PUT', 'settings', {
+                        maxConcurrent: parseInt($('hdlMaxConcurrent').value, 10),
+                        outputFormat: $('hdlOutputFormat').value,
+                        defaultQuality: $('hdlDefaultQuality').value,
+                        rateLimit: $('hdlRateLimit').value.trim(),
+                        subtitleLangs: $('hdlSubLangs').value,
+                        embedSubs: $('hdlEmbedSubs').checked,
+                        restrictToSources: $('hdlRestrict').checked,
+                        sources: sources.map(function (s) { return s.read(); })
+                    }).then(function (d) { fillSettings(d); msg('Gespeichert.', 'hdl-ok'); });
+                }).catch(function (err) { msg(err.message, 'hdl-err'); }).then(done);
             });
         })();
     </script>

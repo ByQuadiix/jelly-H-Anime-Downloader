@@ -62,6 +62,7 @@
         els.url = el('input', { type: 'url', class: 'hdl-input', placeholder: 'Serien- oder Folgen-URL einfuegen', autocomplete: 'off' });
         els.resolveBtn = el('button', { class: 'hdl-btn hdl-primary', type: 'button', onclick: onResolve, text: 'Analysieren' });
         els.message = el('div', { class: 'hdl-message', role: 'status' });
+        els.sources = el('div', { class: 'hdl-message' });
         els.form = el('div', { class: 'hdl-form hdl-hidden' });
         els.queue = el('div', { class: 'hdl-queue' });
 
@@ -76,6 +77,7 @@
             header,
             el('div', { class: 'hdl-body' }, [
                 el('div', { class: 'hdl-row' }, [els.url, els.resolveBtn]),
+                els.sources,
                 els.message,
                 els.form,
                 el('div', { class: 'hdl-subhead' }, [
@@ -244,7 +246,13 @@
         els.overlay.classList.remove('hdl-hidden');
         document.body.classList.add('hdl-noscroll');
         if (!state.config) {
-            request('GET', 'config').then(function (cfg) { state.config = cfg; }).catch(function () { /* Anzeige in der Queue */ });
+            request('GET', 'config').then(function (cfg) {
+                state.config = cfg;
+                var names = cfg.sources || [];
+                els.sources.textContent = names.length
+                    ? (cfg.restrictToSources ? 'Erlaubte Quellen: ' : 'Konfigurierte Quellen: ') + names.join(', ')
+                    : (cfg.restrictToSources ? 'Es sind keine Quellen freigegeben – bitte einen Administrator fragen.' : '');
+            }).catch(function () { /* Anzeige in der Queue */ });
         }
         refresh();
         state.timer = window.setInterval(refresh, POLL_MS);

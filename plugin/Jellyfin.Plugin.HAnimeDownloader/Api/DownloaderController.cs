@@ -1,5 +1,4 @@
 using System.Net.Mime;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.HAnimeDownloader.Configuration;
 using Microsoft.AspNetCore.Authorization;
@@ -10,15 +9,15 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.HAnimeDownloader.Api;
 
 /// <summary>
-/// Liefert das Client-Skript aus und leitet API-Aufrufe angemeldeter Jellyfin-Benutzer an das Backend weiter.
+/// Liefert das Client-Skript aus und leitet Aufrufe angemeldeter Jellyfin-Benutzer an das Backend weiter.
 /// Das Backend ist damit nie direkt aus dem Browser erreichbar und braucht keine eigene Benutzerverwaltung.
+/// Einstellungen (/admin) sind zusaetzlich auf Jellyfin-Administratoren beschraenkt.
 /// </summary>
 [ApiController]
 [Route("HAnimeDownloader")]
 public class DownloaderController : ControllerBase
 {
     private static readonly Regex SafePath = new(@"^[A-Za-z0-9_\-./]{1,100}$", RegexOptions.Compiled);
-    private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase) { "GET", "POST", "DELETE" };
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<DownloaderController> _logger;
@@ -34,8 +33,7 @@ public class DownloaderController : ControllerBase
     [AllowAnonymous]
     public ActionResult GetClientScript()
     {
-        var assembly = typeof(Plugin).Assembly;
-        var stream = assembly.GetManifestResourceStream("Jellyfin.Plugin.HAnimeDownloader.Web.client.js");
+        var stream = typeof(Plugin).Assembly.GetManifestResourceStream("Jellyfin.Plugin.HAnimeDownloader.Web.client.js");
         if (stream is null)
         {
             return NotFound();
@@ -45,11 +43,21 @@ public class DownloaderController : ControllerBase
         return File(stream, "application/javascript; charset=utf-8");
     }
 
-    /// <summary>Authentifizierter Proxy zum Backend.</summary>
+    /// <summary>Downloads, Analyse, Queue - fuer jeden angemeldeten Benutzer.</summary>
     [Route("api/{**path}")]
     [AcceptVerbs("GET", "POST", "DELETE")]
     [Authorize(Policy = "DefaultAuthorization")]
-    public async Task<ActionResult> Proxy(string? path, CancellationToken cancellationToken)
+    public Task<ActionResult> Api(string? path, CancellationToken cancellationToken)
+        => Forward("api", path, cancellationToken);
+
+    /// <summary>Einstellungen und Quellen - nur fuer Jellyfin-Administratoren.</summary>
+    [Route("admin/{**path}")]
+    [AcceptVerbs("GET", "PUT")]
+    [Authorize(Policy = "RequiresElevation")]
+    public Task<ActionResult> Admin(string? path, CancellationToken cancellationToken)
+        => Forward("admin", path, cancellationToken);
+
+    private async Task<ActionResult> Forward(string area, string? path, CancellationToken cancellationToken)
     {
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
         if (string.IsNullOrWhiteSpace(config.BackendUrl) || string.IsNullOrWhiteSpace(config.ApiKey))
@@ -58,17 +66,17 @@ public class DownloaderController : ControllerBase
         }
 
         path ??= string.Empty;
-        if (!SafePath.IsMatch(path) || path.Contains("..", StringComparison.Ordinal) || !AllowedMethods.Contains(Request.Method))
+        if (!SafePath.IsMatch(path) || path.Contains("..", StringComparison.Ordinal))
         {
             return BadRequest();
         }
 
-        var target = $"{config.BackendUrl.TrimEnd('/')}/api/{path}{Request.QueryString}";
+        var target = $"{config.BackendUrl.TrimEnd('/')}/{area}/{path}{Request.QueryString}";
         using var message = new HttpRequestMessage(new HttpMethod(Request.Method), target);
         message.Headers.Add("X-Api-Key", config.ApiKey);
         message.Headers.Add("X-Jellyfin-User", Uri.EscapeDataString(User.Identity?.Name ?? "unbekannt"));
 
-        if (Request.Method is "POST" or "DELETE" && (Request.ContentLength ?? 0) > 0)
+        if (Request.Method is "POST" or "PUT" or "DELETE" && (Request.ContentLength ?? 0) > 0)
         {
             using var buffer = new MemoryStream();
             await Request.Body.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);

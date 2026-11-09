@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+QUALITIES = {"best": None, "1080": 1080, "720": 720, "480": 480}
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:

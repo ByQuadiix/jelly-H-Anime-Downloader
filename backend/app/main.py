@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 
 from . import resolver
 from .config import Settings
-from .downloader import QUALITIES, DownloadManager, LibraryRefresher
+from .config import QUALITIES
+from .downloader import DownloadManager, LibraryRefresher, source_options
 from .jobs import Job, JobStore
 from .security import UrlNotAllowed, validate_url
+from .settings_store import SettingsStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -43,7 +45,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     store = JobStore(settings.data_dir / "jobs.json")
     refresher = LibraryRefresher(settings)
-    manager = DownloadManager(settings, store, on_finished=refresher.trigger)
+    runtime = SettingsStore(settings.data_dir / "settings.json", settings)
+    manager = DownloadManager(settings, store, runtime, on_finished=refresher.trigger)
+
+    def check_url(url: str) -> str:
+        """SSRF-Schutz + optional: nur URLs konfigurierter, aktiver Quellen."""
+        url = validate_url(url, settings.allow_private_urls)
+        if runtime.get().restrict_to_sources and runtime.match(url) is None:
+            raise UrlNotAllowed("Diese Seite ist nicht als Quelle freigegeben (Admin-Einstellungen).")
+        return url
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -54,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="H!Anime Downloader", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.manager = manager
     app.state.store = store
+    app.state.runtime = runtime
 
     def auth(
         x_api_key: str = Header(default=""),
@@ -69,19 +80,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/config")
     def get_config(_user: str = Depends(auth)) -> dict:
+        rt = runtime.get()
         return {
             "qualities": list(QUALITIES),
-            "defaultQuality": settings.default_quality if settings.default_quality in QUALITIES else "best",
-            "outputFormat": settings.output_format,
-            "maxConcurrent": settings.max_concurrent,
+            "defaultQuality": rt.default_quality,
+            "outputFormat": rt.output_format,
+            "maxConcurrent": rt.max_concurrent,
             "libraryRefresh": refresher.enabled,
+            "restrictToSources": rt.restrict_to_sources,
+            "sources": [s.name for s in rt.sources if s.enabled],
         }
+
+    # -- Admin (nur ueber den Admin-Proxy des Plugins erreichbar) -------------
+    @app.get("/admin/settings")
+    def get_settings(_user: str = Depends(auth)) -> dict:
+        return runtime.public_view()
+
+    @app.put("/admin/settings")
+    def put_settings(body: dict, _user: str = Depends(auth)) -> dict:
+        try:
+            return runtime.update(body)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/resolve")
     def post_resolve(body: ResolveIn, _user: str = Depends(auth)) -> dict:
         try:
-            url = validate_url(body.url, settings.allow_private_urls)
-            source = resolver.resolve(url)
+            url = check_url(body.url)
+            with source_options(runtime.match(url), manager.tmp_dir) as extra:
+                source = resolver.resolve(url, extra)
         except UrlNotAllowed as exc:
             raise HTTPException(400, str(exc)) from exc
         except resolver.ResolveError as exc:
@@ -94,11 +121,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/jobs")
     def post_jobs(body: DownloadIn, user: str = Depends(auth)) -> list[dict]:
-        quality = body.quality if body.quality in QUALITIES else "best"
+        quality = body.quality if body.quality in QUALITIES else runtime.get().default_quality
         created = []
         for episode in body.episodes:
             try:
-                url = validate_url(episode.url, settings.allow_private_urls)
+                url = check_url(episode.url)
             except UrlNotAllowed as exc:
                 raise HTTPException(400, str(exc)) from exc
             job = Job(

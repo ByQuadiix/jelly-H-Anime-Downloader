@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Baut das Plugin und packt es als ZIP (dll + meta.json) nach dist/.
-# Nutzung:  plugin/build.sh [10.11|12]      (Standard: 10.11)
+# Nutzung:  plugin/build.sh [12|10.11]      (Standard: 12 = Jellyfin 12.4)
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TARGET="${1:-10.11}"
+TARGET="${1:-12}"
 case "$TARGET" in
   10.11) TFM=net9.0;  JF_VERSION=10.11.0; ABI=10.11.0.0 ;;
-  12)    TFM=net10.0; JF_VERSION=12.4.0;  ABI=12.0.0.0 ;;
+  12)    TFM=net10.0; JF_VERSION=12.4.0;  ABI=12.4.0.0 ;;
   *) echo "Unbekanntes Ziel '$TARGET' (erlaubt: 10.11, 12)"; exit 1 ;;
 esac
 
@@ -25,7 +25,7 @@ cat > "$OUT/meta.json" <<JSON
   "overview": "Fuegt Jellyfin ein Download-Menue hinzu (benoetigt File Transformation).",
   "owner": "ByQuadiix",
   "category": "General",
-  "version": "1.0.0.0",
+  "version": "1.1.0.0",
   "targetAbi": "$ABI",
   "framework": "$TFM",
   "changelog": "Erste Version"
