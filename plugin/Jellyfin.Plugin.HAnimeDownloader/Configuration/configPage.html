@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>H!Anime Downloader</title>
+</head>
+<body>
+<div id="HAnimeDownloaderConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="HAnimeDownloaderConfigForm">
+                <h2>H!Anime Downloader</h2>
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="BackendUrl">Backend-URL</label>
+                    <input id="BackendUrl" name="BackendUrl" type="url" is="emby-input" placeholder="http://hanime-downloader:8080" />
+                    <div class="fieldDescription">Adresse des Downloader-Containers, so wie der Jellyfin-Server sie erreicht (nicht der Browser).</div>
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ApiKey">API-Key</label>
+                    <input id="ApiKey" name="ApiKey" type="password" is="emby-input" autocomplete="new-password" />
+                    <div class="fieldDescription">Muss exakt dem <code>API_KEY</code> des Backends entsprechen.</div>
+                </div>
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Speichern</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var pluginId = 'e286ec7b-b08d-40dc-ac58-3788907d65f7';
+            var page = document.querySelector('#HAnimeDownloaderConfigPage');
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    page.querySelector('#BackendUrl').value = config.BackendUrl || '';
+                    page.querySelector('#ApiKey').value = config.ApiKey || '';
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            page.querySelector('#HAnimeDownloaderConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.BackendUrl = page.querySelector('#BackendUrl').value.trim();
+                    config.ApiKey = page.querySelector('#ApiKey').value;
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
+                });
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

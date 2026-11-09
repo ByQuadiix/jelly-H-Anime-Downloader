@@ -1,0 +1,29 @@
+# Beispiel: Downloader neben einem bestehenden Jellyfin-Container betreiben.
+# Wichtig: beide Container muessen im selben Docker-Netzwerk sein (siehe "networks"),
+# damit das Jellyfin-Plugin das Backend unter http://hanime-downloader:8080 erreicht.
+services:
+  hanime-downloader:
+    build: ./backend
+    container_name: hanime-downloader
+    restart: unless-stopped
+    environment:
+      # Pflicht: langer, zufaelliger Schluessel (z. B. `openssl rand -hex 32`).
+      # Derselbe Wert kommt in die Plugin-Einstellungen in Jellyfin.
+      API_KEY: ${API_KEY:?API_KEY in .env setzen}
+      MAX_CONCURRENT: 2          # parallele Downloads
+      OUTPUT_FORMAT: mkv         # mkv | mp4
+      DEFAULT_QUALITY: best      # best | 1080 | 720 | 480
+      # Optional: Bibliothek nach jedem fertigen Download automatisch scannen
+      # JELLYFIN_URL: http://jellyfin:8096
+      # JELLYFIN_API_KEY: <API-Key aus Jellyfin Dashboard -> API-Schluessel>
+    user: "1000:1000"            # = Benutzer, dem die Medien gehoeren (PUID/PGID von Jellyfin)
+    volumes:
+      - ./data:/data                          # Queue + yt-dlp-Updates
+      - /pfad/zu/deinen/Anime:/media          # = Jellyfin-Bibliothek (Typ: Shows)
+    networks: [jellyfin]
+    # KEIN "ports:" noetig - nur das Jellyfin-Plugin spricht mit dem Backend.
+
+networks:
+  jellyfin:
+    external: true
+    name: jellyfin_default   # Name des Netzwerks deines Jellyfin-Containers (`docker network ls`)
